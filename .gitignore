@@ -1,0 +1,47 @@
+d# Binary directory
+*build*
+
+# VSCode
+.vscode/
+
+# CLion
+.idea/
+
+# MDK-ARM
+.MDK-ARM
+DebugConfig
+*uvguix*
+
+*.o
+*.d
+*.hex
+*.bin
+*.elf
+*.axf
+*.crf
+*.map
+*.htm
+*.lnp
+*.sct
+*.dep
+*.lst
+*.scvd
+*.iex
+*.bat
+*.Bak
+*.__i
+*.i
+*.user
+
+# CMSIS: only keep the two Include dirs needed by the build
+Drivers/CMSIS/DSP/
+Drivers/CMSIS/NN/
+Drivers/CMSIS/Core/
+Drivers/CMSIS/Core_A/
+Drivers/CMSIS/DAP/
+Drivers/CMSIS/RTOS/
+Drivers/CMSIS/RTOS2/
+Drivers/CMSIS/Documentation/
+
+# extra build artifacts
+*.su
