@@ -3,10 +3,11 @@
 //
 #include "user.h"
 #include "main.h"
-extern volatile uint32_t tick;
+IMU imu;
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
     if (htim->Instance == TIM6) {
-        tick++;
+        imu.acc_calculate();
+        imu.gyro_calculate();
     }
 }

@@ -46,9 +46,6 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-volatile uint32_t tick;
-volatile uint32_t last_tick;
-IMU imu;
 uint8_t ret=0;
 /* USER CODE END PV */
 
@@ -103,12 +100,6 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    if (tick!=last_tick)
-    {
-      last_tick=tick;
-      imu.acc_calculate();
-      imu.gyro_calculate();
-    }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
