@@ -10,7 +10,7 @@ const float R_imu[3][3] = {{-1.0f, 0.0f, 0.0f},
 class IMU
 {
     public:
-        IMU():acc{0, 0, 0}, gyro{0, 0, 0} ,gyro_bias_{0,0,0},accel_bias_{0,0,0}{}
+        IMU():acc{0, 0, 0}, gyro{0, 0, 0} ,gyro_bias_{0,0,0},accel_bias_{0,0,0},fourdimen{1.0f,0,0,0}{}
         void acc_calculate();
         void gyro_calculate();
         void read();
@@ -22,6 +22,7 @@ class IMU
         float pitch_ = 0.0f;
         float yaw_   = 0.0f;
     private:
+        float fourdimen[4];
          int16_t acc[3];
          int16_t gyro[3];
          float  acc_scale;

@@ -6,9 +6,11 @@
 #include "spi.h"
 #include "user.h"
 #include<cmath>
+#include <cstring>
 constexpr float G = 9.80665f;
 constexpr float PI = 3.14159f;
 const float filter=0.95f;
+
 // void IMU::read()
 // {
 //     uint8_t tmp[6];
@@ -22,6 +24,7 @@ const float filter=0.95f;
 //     gyro[2]=tmp[5]<<8 | tmp[4];
 //
 // }
+
 float IMU::wrapPi(float a)
 {
     while (a >   PI) a -= 2.0f * PI;
@@ -31,13 +34,52 @@ float IMU::wrapPi(float a)
 
 void IMU::updateAttitude(float dt)
 {
+    float fourdimen_copy[4];
+    memcpy(fourdimen_copy, fourdimen, sizeof(fourdimen_copy));
+
+    float gx = gyro_sensor_[0];
+    float gy = gyro_sensor_[1];
+    float gz = gyro_sensor_[2];
+    float half_dt = 0.5f * dt;
+
+    fourdimen[0] += (-fourdimen_copy[1] * gx - fourdimen_copy[2] * gy - fourdimen_copy[3] * gz) * half_dt;
+    fourdimen[1] += ( fourdimen_copy[0] * gx + fourdimen_copy[2] * gz - fourdimen_copy[3] * gy) * half_dt;
+    fourdimen[2] += ( fourdimen_copy[0] * gy - fourdimen_copy[1] * gz + fourdimen_copy[3] * gx) * half_dt;
+    fourdimen[3] += ( fourdimen_copy[0] * gz + fourdimen_copy[1] * gy - fourdimen_copy[2] * gx) * half_dt;
+
+
+    float q_norm = sqrtf(fourdimen[0]*fourdimen[0] +
+                         fourdimen[1]*fourdimen[1] +
+                         fourdimen[2]*fourdimen[2] +
+                         fourdimen[3]*fourdimen[3]);
+    if (q_norm > 0.0f) {
+        fourdimen[0] /= q_norm;
+        fourdimen[1] /= q_norm;
+        fourdimen[2] /= q_norm;
+        fourdimen[3] /= q_norm;
+    }
+
+
+    float roll_gyro = atan2f(2.0f * (fourdimen[0] * fourdimen[1] + fourdimen[2] * fourdimen[3]),
+                    1.0f - 2.0f * (fourdimen[1] * fourdimen[1] + fourdimen[2] * fourdimen[2]));
+
+    float sinp = 2.0f * (fourdimen[0] * fourdimen[2] - fourdimen[3] * fourdimen[1]);
+    float pitch_gyro =asinf(sinp);
+    if (fabsf(sinp) >= 1.0f)
+    {
+        pitch_gyro = copysignf(PI / 2.0f, sinp);
+
+    }
+
+
+    yaw_   = atan2f(2.0f * (fourdimen[0] * fourdimen[3] + fourdimen[1] * fourdimen[2]),
+                    1.0f - 2.0f * (fourdimen[2] * fourdimen[2] + fourdimen[3] * fourdimen[3]));
+
     float roll_acc  = atan2f(accel_sensor_[1], accel_sensor_[2]);
     float pitch_acc = atan2f(-accel_sensor_[0],
                              sqrtf(accel_sensor_[1] * accel_sensor_[1] +
                                    accel_sensor_[2] * accel_sensor_[2]));
-    float roll_gyro  = roll_  + gyro_sensor_[0] * dt;
-    float pitch_gyro = pitch_ + gyro_sensor_[1] * dt;
-    yaw_   = yaw_  + gyro_sensor_[2] * dt;
+
     //滤波
     float acc_norm = sqrtf(accel_sensor_[0]*accel_sensor_[0] +
                        accel_sensor_[1]*accel_sensor_[1] +
