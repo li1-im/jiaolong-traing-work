@@ -34,71 +34,52 @@ float IMU::wrapPi(float a)
 
 void IMU::updateAttitude(float dt)
 {
-    float fourdimen_copy[4];
-    memcpy(fourdimen_copy, fourdimen, sizeof(fourdimen_copy));
-
     float gx = gyro_sensor_[0];
     float gy = gyro_sensor_[1];
     float gz = gyro_sensor_[2];
-    float half_dt = 0.5f * dt;
+    float roll_pred  = wrapPi(roll_  + gx * dt);
+    float pitch_pred = wrapPi(pitch_ + gy * dt);
+    float roll_acc  = atan2f(accel_sensor_[1], accel_sensor_[2]);
+    float pitch_acc = atan2f(-accel_sensor_[0],
+                             sqrtf(accel_sensor_[1] * accel_sensor_[1] +
+                                   accel_sensor_[2] * accel_sensor_[2]));
 
-    fourdimen[0] += (-fourdimen_copy[1] * gx - fourdimen_copy[2] * gy - fourdimen_copy[3] * gz) * half_dt;
-    fourdimen[1] += ( fourdimen_copy[0] * gx + fourdimen_copy[2] * gz - fourdimen_copy[3] * gy) * half_dt;
-    fourdimen[2] += ( fourdimen_copy[0] * gy - fourdimen_copy[1] * gz + fourdimen_copy[3] * gx) * half_dt;
-    fourdimen[3] += ( fourdimen_copy[0] * gz + fourdimen_copy[1] * gy - fourdimen_copy[2] * gx) * half_dt;
+    float acc_norm = sqrtf(accel_sensor_[0] * accel_sensor_[0] +
+                           accel_sensor_[1] * accel_sensor_[1] +
+                           accel_sensor_[2] * accel_sensor_[2]);
 
+    if (fabsf(acc_norm - 9.8f) < 2.0f)
+    {
+        roll_  = wrapPi(roll_pred  + (1.0f - filter) * wrapPi(roll_acc  - roll_pred));
+        pitch_ = wrapPi(pitch_pred + (1.0f - filter) * wrapPi(pitch_acc - pitch_pred));
 
-    float q_norm = sqrtf(fourdimen[0]*fourdimen[0] +
-                         fourdimen[1]*fourdimen[1] +
-                         fourdimen[2]*fourdimen[2] +
-                         fourdimen[3]*fourdimen[3]);
+    }
+    else
+    {
+        roll_  = roll_pred;
+        pitch_ = pitch_pred;
+    }
+    float fourdimen_copy[4];
+    memcpy(fourdimen_copy, fourdimen, sizeof(fourdimen_copy));
+    fourdimen[0] += 0.5f * (-fourdimen_copy[1] * gx - fourdimen_copy[2] * gy - fourdimen_copy[3] * gz) * dt;
+    fourdimen[1] += 0.5f * ( fourdimen_copy[0] * gx + fourdimen_copy[2] * gz - fourdimen_copy[3] * gy) * dt;
+    fourdimen[2] += 0.5f * ( fourdimen_copy[0] * gy - fourdimen_copy[1] * gz + fourdimen_copy[3] * gx) * dt;
+    fourdimen[3] += 0.5f * ( fourdimen_copy[0] * gz + fourdimen_copy[1] * gy - fourdimen_copy[2] * gx) * dt;
+    float q_norm = sqrtf(fourdimen[0] * fourdimen[0] +
+                         fourdimen[1] * fourdimen[1] +
+                         fourdimen[2] * fourdimen[2] +
+                         fourdimen[3] * fourdimen[3]);
     if (q_norm > 0.0f) {
         fourdimen[0] /= q_norm;
         fourdimen[1] /= q_norm;
         fourdimen[2] /= q_norm;
         fourdimen[3] /= q_norm;
     }
-
-
-    float roll_gyro = atan2f(2.0f * (fourdimen[0] * fourdimen[1] + fourdimen[2] * fourdimen[3]),
-                    1.0f - 2.0f * (fourdimen[1] * fourdimen[1] + fourdimen[2] * fourdimen[2]));
-
-    float sinp = 2.0f * (fourdimen[0] * fourdimen[2] - fourdimen[3] * fourdimen[1]);
-    float pitch_gyro =asinf(sinp);
-    if (fabsf(sinp) >= 1.0f)
-    {
-        pitch_gyro = copysignf(PI / 2.0f, sinp);
-
-    }
-
-
-    yaw_   = atan2f(2.0f * (fourdimen[0] * fourdimen[3] + fourdimen[1] * fourdimen[2]),
-                    1.0f - 2.0f * (fourdimen[2] * fourdimen[2] + fourdimen[3] * fourdimen[3]));
-
-    float roll_acc  = atan2f(accel_sensor_[1], accel_sensor_[2]);
-    float pitch_acc = atan2f(-accel_sensor_[0],
-                             sqrtf(accel_sensor_[1] * accel_sensor_[1] +
-                                   accel_sensor_[2] * accel_sensor_[2]));
-
-    //滤波
-    float acc_norm = sqrtf(accel_sensor_[0]*accel_sensor_[0] +
-                       accel_sensor_[1]*accel_sensor_[1] +
-                       accel_sensor_[2]*accel_sensor_[2]);
-
-    // 如果加速度模长偏离 1g 太多（比如超过 2m/s^2 的偏差），说明在剧烈运动，此时不要用加速度计修正！
-    if (fabs(acc_norm - 9.8f) < 2.0f) {
-        // 正常融合
-        roll_  = filter * roll_gyro  + (1.0f - filter) * roll_acc;
-        pitch_ = filter * pitch_gyro + (1.0f - filter) * pitch_acc;
-    } else {
-        // 剧烈运动，完全信任陀螺仪
-        roll_  = roll_gyro;
-        pitch_ = pitch_gyro;
-    }
-    roll_  = wrapPi(roll_);
-    pitch_ = wrapPi(pitch_);
-    yaw_   = wrapPi(yaw_);
+    yaw_ = atan2f(2.0f * (fourdimen[0] * fourdimen[3] + fourdimen[1] * fourdimen[2]),
+                  1.0f - 2.0f * (fourdimen[2] * fourdimen[2] + fourdimen[3] * fourdimen[3]));
+    yaw_ = wrapPi(yaw_);
 }
+
 
 void IMU::calibrate_gyro(uint32_t samples, TIM_HandleTypeDef *htim)
 {
