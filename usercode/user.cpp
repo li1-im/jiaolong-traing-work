@@ -5,8 +5,10 @@
 #include "stm32f4xx_hal.h"
 #include "spi.h"
 #include "user.h"
+#include<cmath>
 constexpr float G = 9.80665f;
 constexpr float PI = 3.14159f;
+const float filter=0.95f;
 // void IMU::read()
 // {
 //     uint8_t tmp[6];
@@ -20,6 +22,70 @@ constexpr float PI = 3.14159f;
 //     gyro[2]=tmp[5]<<8 | tmp[4];
 //
 // }
+float IMU::wrapPi(float a)
+{
+    while (a >   PI) a -= 2.0f * PI;
+    while (a <  -PI) a += 2.0f * PI;
+    return a;
+}
+
+void IMU::updateAttitude(float dt)
+{
+    float roll_acc  = atan2f(accel_sensor_[1], accel_sensor_[2]);
+    float pitch_acc = atan2f(-accel_sensor_[0],
+                             sqrtf(accel_sensor_[1] * accel_sensor_[1] +
+                                   accel_sensor_[2] * accel_sensor_[2]));
+    float roll_gyro  = roll_  + gyro_sensor_[0] * dt;
+    float pitch_gyro = pitch_ + gyro_sensor_[1] * dt;
+    yaw_   = yaw_  + gyro_sensor_[2] * dt;
+    //滤波
+    float acc_norm = sqrtf(accel_sensor_[0]*accel_sensor_[0] +
+                       accel_sensor_[1]*accel_sensor_[1] +
+                       accel_sensor_[2]*accel_sensor_[2]);
+
+    // 如果加速度模长偏离 1g 太多（比如超过 2m/s^2 的偏差），说明在剧烈运动，此时不要用加速度计修正！
+    if (fabs(acc_norm - 9.8f) < 2.0f) {
+        // 正常融合
+        roll_  = filter * roll_gyro  + (1.0f - filter) * roll_acc;
+        pitch_ = filter * pitch_gyro + (1.0f - filter) * pitch_acc;
+    } else {
+        // 剧烈运动，完全信任陀螺仪
+        roll_  = roll_gyro;
+        pitch_ = pitch_gyro;
+    }
+    roll_  = wrapPi(roll_);
+    pitch_ = wrapPi(pitch_);
+    yaw_   = wrapPi(yaw_);
+}
+
+void IMU::calibrate_gyro(uint32_t samples, TIM_HandleTypeDef *htim)
+{
+    float sum[3] = {0.0f, 0.0f, 0.0f};
+
+    if (samples == 0U) return;
+    HAL_TIM_Base_Stop_IT(htim);
+    __HAL_TIM_CLEAR_FLAG(htim, TIM_FLAG_UPDATE);
+    if (htim->Instance == TIM6) {
+        HAL_NVIC_DisableIRQ(TIM6_DAC_IRQn);
+        HAL_NVIC_ClearPendingIRQ(TIM6_DAC_IRQn);
+    }
+    for (uint32_t k = 0; k < samples; k++) {
+        gyro_calculate();
+        for (uint8_t i = 0; i < 3U; i++) {
+            sum[i] += gyro_x * R_imu[i][0] +
+                      gyro_y * R_imu[i][1] +
+                      gyro_z * R_imu[i][2];
+        }
+        HAL_Delay(2);
+    }
+    for (uint8_t i = 0; i < 3U; i++) {
+        gyro_bias_[i] = sum[i] / (float)samples;
+    }
+    if (htim->Instance == TIM6) {
+        HAL_NVIC_EnableIRQ(TIM6_DAC_IRQn);
+    }
+    HAL_TIM_Base_Start_IT(htim);
+}
 void IMU::acc_calculate()
 {
     uint8_t raw_range=0;
@@ -61,6 +127,20 @@ void IMU::gyro_calculate()
     gyro_y=gyro[1]*gyro_scale;
     gyro_z=gyro[2]*gyro_scale;
 }
+void IMU::sensorDataTransform()
+{
+    for (uint8_t i = 0; i < 3; i++) {
+        gyro_sensor_[i] =gyro_x * R_imu[i][0] +
+                          gyro_y * R_imu[i][1] +
+                         gyro_z * R_imu[i][2] - gyro_bias_[i];
+        accel_sensor_[i] =  acc_x * R_imu[i][0] +
+                          acc_y * R_imu[i][1] +
+                         acc_z * R_imu[i][2]  -
+                           accel_bias_[i];
+    }
+}
+
+
 void bmi088_write_byte(uint8_t tx_data)
 {
     HAL_SPI_Transmit(&hspi1,&tx_data, 1, 10);

@@ -46,6 +46,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
+extern IMU imu;
 uint8_t ret=0;
 /* USER CODE END PV */
 
@@ -93,6 +94,12 @@ int main(void)
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
   ret=bmi088_init();
+  if (ret == 6) {
+    HAL_Delay(500);
+    imu.calibrate_gyro(1000, &htim6);
+  } else {
+    HAL_TIM_Base_Start_IT(&htim6);
+  }
   HAL_TIM_Base_Start_IT(&htim6);
   /* USER CODE END 2 */
 

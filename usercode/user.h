@@ -4,13 +4,23 @@
 #include "stm32f4xx_hal.h"
 #ifndef SPI_USER_H
 #define SPI_USER_H
+const float R_imu[3][3] = {{-1.0f, 0.0f, 0.0f},
+                         {0.0f, -1.0f, 0.0f},
+                         {0.0f, 0.0f, 1.0f}};
 class IMU
 {
     public:
-        IMU():acc{0, 0, 0}, gyro{0, 0, 0} {}
+        IMU():acc{0, 0, 0}, gyro{0, 0, 0} ,gyro_bias_{0,0,0},accel_bias_{0,0,0}{}
         void acc_calculate();
         void gyro_calculate();
         void read();
+        void sensorDataTransform();
+        void calibrate_gyro(uint32_t samples, TIM_HandleTypeDef *htim);
+        void updateAttitude(float dt);
+        float wrapPi(float a);
+        float roll_  = 0.0f;
+        float pitch_ = 0.0f;
+        float yaw_   = 0.0f;
     private:
          int16_t acc[3];
          int16_t gyro[3];
@@ -18,6 +28,11 @@ class IMU
          float gyro_scale;
          float acc_x, acc_y, acc_z;
          float gyro_x, gyro_y, gyro_z;
+        float  gyro_sensor_[3];
+        float  gyro_bias_[3];
+        float accel_sensor_[3];
+        float accel_bias_[3];
+
 
 };
 void bmi088_write_byte(uint8_t tx_data);
