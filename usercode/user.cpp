@@ -10,6 +10,7 @@
 constexpr float G = 9.80665f;
 constexpr float PI = 3.14159f;
 const float filter=0.95f;
+const float kp=2.0f;
 
 // void IMU::read()
 // {
@@ -34,37 +35,39 @@ float IMU::wrapPi(float a)
 
 void IMU::updateAttitude(float dt)
 {
+    float q0 = fourdimen[0];
+    float q1 = fourdimen[1];
+    float q2 = fourdimen[2];
+    float q3 = fourdimen[3];
+
+    float ax = accel_sensor_[0];
+    float ay = accel_sensor_[1];
+    float az = accel_sensor_[2];
+
     float gx = gyro_sensor_[0];
     float gy = gyro_sensor_[1];
     float gz = gyro_sensor_[2];
-    float roll_pred  = wrapPi(roll_  + gx * dt);
-    float pitch_pred = wrapPi(pitch_ + gy * dt);
-    float roll_acc  = atan2f(accel_sensor_[1], accel_sensor_[2]);
-    float pitch_acc = atan2f(-accel_sensor_[0],
-                             sqrtf(accel_sensor_[1] * accel_sensor_[1] +
-                                   accel_sensor_[2] * accel_sensor_[2]));
-
-    float acc_norm = sqrtf(accel_sensor_[0] * accel_sensor_[0] +
-                           accel_sensor_[1] * accel_sensor_[1] +
-                           accel_sensor_[2] * accel_sensor_[2]);
-
-    if (fabsf(acc_norm - 9.8f) < 2.0f)
+    float an = sqrtf(ax * ax + ay * ay + az * az);
+    if (fabsf(an - 9.8f) < 2.0f && an > 0.0f)
     {
-        roll_  = wrapPi(roll_pred  + (1.0f - filter) * wrapPi(roll_acc  - roll_pred));
-        pitch_ = wrapPi(pitch_pred + (1.0f - filter) * wrapPi(pitch_acc - pitch_pred));
+        ax /= an; ay /= an; az /= an;   
+        float vx = 2.0f * (q1 * q3 - q0 * q2);
+        float vy = 2.0f * (q0 * q1 + q2 * q3);
+        float vz = 1.0f - 2.0f * (q1 * q1 + q2 * q2);
+        float ex = ay * vz - az * vy;
+        float ey = az * vx - ax * vz;
+        float ez = ax * vy - ay * vx;
+        gx += kp * ex;
+        gy += kp * ey;
+        gz += kp * ez;
+    }
 
-    }
-    else
-    {
-        roll_  = roll_pred;
-        pitch_ = pitch_pred;
-    }
-    float fourdimen_copy[4];
-    memcpy(fourdimen_copy, fourdimen, sizeof(fourdimen_copy));
-    fourdimen[0] += 0.5f * (-fourdimen_copy[1] * gx - fourdimen_copy[2] * gy - fourdimen_copy[3] * gz) * dt;
-    fourdimen[1] += 0.5f * ( fourdimen_copy[0] * gx + fourdimen_copy[2] * gz - fourdimen_copy[3] * gy) * dt;
-    fourdimen[2] += 0.5f * ( fourdimen_copy[0] * gy - fourdimen_copy[1] * gz + fourdimen_copy[3] * gx) * dt;
-    fourdimen[3] += 0.5f * ( fourdimen_copy[0] * gz + fourdimen_copy[1] * gy - fourdimen_copy[2] * gx) * dt;
+    fourdimen[0] += (-q1 * gx - q2 * gy - q3 * gz) * 0.5f * dt;
+    fourdimen[1] += ( q0 * gx + q2 * gz - q3 * gy) * 0.5f * dt;
+    fourdimen[2] += ( q0 * gy - q1 * gz + q3 * gx) * 0.5f * dt;
+    fourdimen[3] += ( q0 * gz + q1 * gy - q2 * gx) * 0.5f * dt;
+
+    // ---------- 归一化：数值积分会让 |q| 慢慢偏离 1，定期拉回 ----------
     float q_norm = sqrtf(fourdimen[0] * fourdimen[0] +
                          fourdimen[1] * fourdimen[1] +
                          fourdimen[2] * fourdimen[2] +
@@ -75,9 +78,22 @@ void IMU::updateAttitude(float dt)
         fourdimen[2] /= q_norm;
         fourdimen[3] /= q_norm;
     }
+
+    roll_ = atan2f(2.0f * (fourdimen[0] * fourdimen[1] + fourdimen[2] * fourdimen[3]),
+                   1.0f - 2.0f * (fourdimen[1] * fourdimen[1] + fourdimen[2] * fourdimen[2]));
+
+    float sinp = 2.0f * (fourdimen[0] * fourdimen[2] - fourdimen[3] * fourdimen[1]);
+    if (fabsf(sinp) >= 1.0f)
+        pitch_ = copysignf(PI / 2.0f, sinp);   // 锁在 ±90°，防 asin 出 NaN
+    else
+        pitch_ = asinf(sinp);
+
     yaw_ = atan2f(2.0f * (fourdimen[0] * fourdimen[3] + fourdimen[1] * fourdimen[2]),
                   1.0f - 2.0f * (fourdimen[2] * fourdimen[2] + fourdimen[3] * fourdimen[3]));
-    yaw_ = wrapPi(yaw_);
+
+    roll_  = wrapPi(roll_);
+    pitch_ = wrapPi(pitch_);
+    yaw_   = wrapPi(yaw_);
 }
 
 
