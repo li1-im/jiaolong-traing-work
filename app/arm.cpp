@@ -236,6 +236,12 @@ bool Arm::trajStartCircle(float cx_m, float cy_m, float radius_m, float period_s
   circle_r_ = radius_m;
   circle_omega_ = 6.2831853f / period_s;          // rad/s
   circle_theta0_ = atan2f(now.y - cy_m, now.x - cx_m);
+  // 起步时末端到圆心的"真实距离"通常 ≠ R（例如手臂伸直 r≈0.15 而 R=0.10）。
+  // 若直接从 r=R 开始采样，第一帧末端就会瞬移到圆周上（实机上表现为突跳）。
+  // 这里用 0.6 s 把半径从 r0 平滑过渡到 R（五次曲线，端点速度/加速度为 0）。
+  circle_r0_ = sqrtf((now.x - cx_m) * (now.x - cx_m) +
+                     (now.y - cy_m) * (now.y - cy_m));
+  circle_blend_ = 0.6f;
   circle_duration_ = period_s * (float)turns;     // s
   trajectory_.abort();                            // 直线缓存不再使用
   trajectory_finished_ = false;
@@ -289,15 +295,30 @@ void Arm::trajectoryPlanner() {
   } else if (trajectory_type_ == TrajectoryType::Circle) {
     // ---- 正圆：位置/速度/加速度全部解析给出 ----
     const float theta = circle_theta0_ + circle_omega_ * elapsed_s;
+    // 半径：前 circle_blend_ 秒从起步半径 r0 五次过渡到 R，之后恒为 R
+    float r = circle_r_;
+    float rdot = 0.f;
+    float rddot = 0.f;
+    if (circle_blend_ > 0.f && elapsed_s < circle_blend_) {
+      const float s = elapsed_s / circle_blend_;
+      const float w = s * s * s * (10.f + s * (-15.f + 6.f * s));  // 0→1，两端零速零加速
+      const float w1 = 30.f * s * s * (1.f - s) * (1.f - s);
+      const float w2 = 60.f * s * (1.f - s) * (1.f - 2.f * s);
+      const float dr = circle_r_ - circle_r0_;
+      r = circle_r0_ + dr * w;
+      rdot = dr * w1 / circle_blend_;
+      rddot = dr * w2 / (circle_blend_ * circle_blend_);
+    }
     const float ct = cosf(theta);
     const float st = sinf(theta);
+    const float v = r * circle_omega_;           // 切向线速度
     CartesianReference point;
-    point.x = circle_cx_ + circle_r_ * ct;
-    point.y = circle_cy_ + circle_r_ * st;
-    point.dx = -circle_r_ * circle_omega_ * st;
-    point.dy = circle_r_ * circle_omega_ * ct;
-    point.ddx = -circle_r_ * circle_omega_ * circle_omega_ * ct;
-    point.ddy = -circle_r_ * circle_omega_ * circle_omega_ * st;
+    point.x = circle_cx_ + r * ct;
+    point.y = circle_cy_ + r * st;
+    point.dx = rdot * ct - v * st;
+    point.dy = rdot * st + v * ct;
+    point.ddx = (rddot - v * circle_omega_) * ct - 2.f * rdot * circle_omega_ * st;
+    point.ddy = (rddot - v * circle_omega_) * st + 2.f * rdot * circle_omega_ * ct;
     float q[2];
     if (!ArmKinematics::inverse(point, reference_.q, trajectory_elbow_, q)) {
       trajAbort();  // 中途进奇异/出工作空间：原地保持

@@ -100,6 +100,8 @@ class Arm {
   float circle_omega_{};   // rad/s，= 2π / period_s
   float circle_theta0_{};  // rad，起始相位，对齐当前末端方位角
   float circle_duration_{};  // s，= period_s * turns
+  float circle_r0_{};      // m，起步时末端到圆心的真实距离（用于半径平滑过渡）
+  float circle_blend_{};   // s，把半径从 r0 过渡到 R 的时长，0 表示不过渡
 };
 
 #endif  // DOUBLE_JOINTED_ROBOTIC_ARM_ARM_H

@@ -97,6 +97,14 @@ void controlLoop(void) {
 
 // IWDG处理，true持续刷新，false进入STOP状态并停止刷新
 void iwdgHandler(bool iwdg_refresh_flag) {
+  // 调试/烧录时冻结 IWDG：内核一旦被调试器 halt（擦写 flash 时必然发生），
+  // 独立看门狗仍继续计数，约 1.5 s 后复位芯片 → 下载中断，
+  // 现象就是 "failed to download Sector[0]"，之后还一直 "Unable to get core ID"。
+  static bool dbg_freeze_done = false;
+  if (!dbg_freeze_done) {
+    __HAL_DBGMCU_FREEZE_IWDG();
+    dbg_freeze_done = true;
+  }
   if (!iwdg_refresh_flag) {
     robot_state = STOP;
   } else {
@@ -150,7 +158,7 @@ static const float kSquare[4][2] = {
   {-0.1f,  0.1f},  // D
 };
 static constexpr float kPrepDuration = 2.0f;   // 预备段：2 s 平滑走到 A（任务书规定）
-static constexpr float kEdgeDuration = 1.0f;   // 正方形每条边的用时（可按效果微调）
+static constexpr float kEdgeDuration = 2.0f;   // 正方形每条边的用时（角被"削圆"就加大它）
 static constexpr float kManualSpeedMax = 1.5f; // 摇杆满舵时的关节速度 rad/s
 static constexpr float kManualDeadBand = 0.15f;  // 摇杆归一化死区，防抖动
 
@@ -231,15 +239,24 @@ void robotControl(void) {
         arm_step = 1;
         arm_start_ok = true;
       }
-    } else if (arm_step >= 1 && arm.trajFinished() && !arm.trajRunning()) {
-      // 上一段“正常走完”（不是被取消）才衔接下一段：
-      // trajStart 从上一段终点起步 => 相邻段参考天然连续。
-      if (arm_step < 5) {
-        uint8_t next = (uint8_t)(arm_step + 1);
-        // next 2→B、3→C、4→D、5→回到 A 闭合整个正方形
-        if (!arm.trajStart(kSquare[next - 1][0], kSquare[next - 1][1],
-                           kEdgeDuration)) {
+    } else if (arm_step >= 1 && !arm.trajRunning()) {
+      if (!arm.trajFinished()) {
+        // 轨迹被中途取消（越界/不可达/奇异）时 trajFinished 一直为 false。
+        // 若这里不把 arm_step 清零，状态机会永久卡在 1~5：
+        // 既不会启动下一段，也永远不会回到 0 => 再拨挡也不会重新启动（死锁）。
+        arm_step = 0;
+        arm_start_ok = false;
+      } else if (arm_step < 5) {
+        // 段号 → 目标顶点：1→B、2→C、3→D、4→A，即索引 = 段号 % 4
+        // （原来写的是 kSquare[next-1]，next=5 时会越界读 kSquare[4]）
+        const int idx = arm_step % 4;
+        if (arm.trajStart(kSquare[idx][0], kSquare[idx][1], kEdgeDuration)) {
+          // ★ 关键：必须推进段号，否则会永远重跑同一段（"只动一下"的根因）
+          arm_step = (uint8_t)(arm_step + 1);
+          arm_start_ok = true;
+        } else {
           arm_step = 0;  // 启动失败（丢反馈/越限）：回空闲，保持最后位置
+          arm_start_ok = false;
         }
       } else {
         // 完整一圈结束：回到空闲，位置参考保持在 A，J0 已净转一圈；
@@ -266,8 +283,12 @@ void robotControl(void) {
         arm_step = 6;  // 6 表示“圆轨迹进行中”（1~5 已被正方形占用）
         arm_start_ok = true;
       }
-    } else if (arm_step == 6 && arm.trajFinished() && !arm.trajRunning()) {
-      arm_step = 0;  // 画完：保持最后位置
+    } else if (arm_step == 6 && !arm.trajRunning()) {
+      // 画完 or 中途被取消（越界/不可达）：都要回到空闲，否则拨挡再也触发不了
+      arm_step = 0;
+      if (!arm.trajFinished()) {
+        arm_start_ok = false;
+      }
     }
   }
 

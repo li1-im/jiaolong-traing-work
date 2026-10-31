@@ -34,7 +34,7 @@ else()
   add_compile_options(-Og -g)
 endif()
 
-project(Double_jointed_robotic_arm C CXX ASM)
+project(Double_jointed_robotic_arm_gearver C CXX ASM)
 
 # select board type
 set(mcu "stm32f407") # C板
