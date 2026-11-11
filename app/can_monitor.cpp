@@ -18,7 +18,6 @@
 extern DJIMotorDriver dji_motor_driver;
 extern MITMotorDriver mit_motor_driver[];
 
-// CAN filter初始化
 void canFilterInit(void) {
   CAN_FilterTypeDef filter;
   filter.FilterActivation = ENABLE;
@@ -36,34 +35,15 @@ void canFilterInit(void) {
   HAL_CAN_Start(&hcan1);
   HAL_CAN_ActivateNotification(&hcan1, CAN_IT_RX_FIFO0_MSG_PENDING);
 
-//   filter.FilterBank = 14;
-//   HAL_CAN_ConfigFilter(&hcan2, &filter);
-//   HAL_CAN_Start(&hcan2);
-//   HAL_CAN_ActivateNotification(&hcan2, CAN_IT_RX_FIFO0_MSG_PENDING);
 }
 
-// CAN通信发送管理
 void canTxMonitor(void) {
-  // note: 每个通道一次只能发送3个包
-  dji_motor_driver.canTxMsg(1, djimotor::ID_1_4);   // can1, id: 0x200
-//   dji_motor_driver.canTxMsg(1, djimotor::ID_5_8);   // can1, id: 0x1ff
-//   dji_motor_driver.canTxMsg(1, djimotor::ID_9_11);  // can1, id: 0x2ff
+  dji_motor_driver.canTxMsg(1, djimotor::ID_1_4);
+  dji_motor_driver.canTxMsg(1, djimotor::ID_5_8);
 
-//   dji_motor_driver.canTxMsg(2, djimotor::ID_1_4);  // can2, id: 0x200
-//   dji_motor_driver.canTxMsg(2, djimotor::ID_5_8);  // can2, id: 0x1ff
-  // dji_motor_driver.canTxMsg(2, DJIMotor::ID_9_11);  // can2, id: 0x2ff
-
-//  mit_motor_driver[0].canTxMsg();
 
   osDelay(1);
 
-  // dji_motor_driver.canTxMsg(1, DJIMotor::ID_1_4);  // can1, id: 0x200
-  // dji_motor_driver.canTxMsg(1, DJIMotor::ID_5_8);  // can1, id: 0x1ff
-  // capacity.canTxMsg();                       // can1, id: 0x301
 
-  // dji_motor_driver.canTxMsg(2, DJIMotor::ID_1_4);  // can2, id: 0x200
-  // dji_motor_driver.canTxMsg(2, DJIMotor::ID_5_8);  // can2, id: 0x1ff
-  // LK9025.canTxMsg();                         // can2, id: 0x280
 
-  // osDelay(1);
 }

@@ -20,7 +20,6 @@
 
 namespace imu {
 
-// IMU temperature control IMU温度控制
 class TempControl {
  public:
   TempControl(TIM_HandleTypeDef* htim, uint32_t tim_channel, PID pid)
@@ -32,19 +31,16 @@ class TempControl {
  private:
   PID pid_;
   uint16_t pwm_;
-  // 加热电压输出端口
   TIM_HandleTypeDef* htim_;
   uint32_t tim_channel_;
 };
 
-// 初始化所有IMU
 void initAll(void);
 
-// 处理所有IMU
 void handleAll(void);
 
-}  // namespace imu
+}
 
 extern IMU board_imu;
 
-#endif  // IMU_MONITOR_H
+#endif

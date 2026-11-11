@@ -1,11 +1,9 @@
-//
 // Created by zyfdx on 2026/10/30.
-//
 
 #include "arm_trajectory.h"
 
-// 时间比例 τ = elapsed / duration，限制在 [0, 1]
-// 小白提示：先把“走了全程的百分之多少”算出来，后面所有公式都只用这个 τ
+#include <cmath>
+
 static float timeRatio(float elapsed_s, float duration_s) {
   float tau = elapsed_s / duration_s;
   if (tau < 0.f) tau = 0.f;
@@ -13,49 +11,44 @@ static float timeRatio(float elapsed_s, float duration_s) {
   return tau;
 }
 
-// 启动一段“起点静止 → 终点静止”的直线插值
 bool ArmTrajectory::start(const CartesianReference& start,
                           const CartesianReference& end, float duration_s) {
-  // 时长必须是正数，否则后面除以时长会变成除零
+  return this->start(start, end, duration_s, 0.f, 0.f);
+}
+
+bool ArmTrajectory::start(const CartesianReference& start,
+                          const CartesianReference& end, float duration_s,
+                          float v0x, float v0y) {
   if (duration_s <= 0.f) {
     return false;
   }
-  // 把起点和终点完整保存下来（位置 dx/dy/ddx/ddy 都拷，结构体直接赋值最省事）
   start_ = start;
   end_ = end;
   duration_s_ = duration_s;
+  v0x_ = v0x;
+  v0y_ = v0y;
   running_ = true;
   return true;
 }
 
-// 采样：给出“轨迹启动后经过的秒数”，返回这一时刻末端的位置、速度、加速度
 CartesianReference ArmTrajectory::sample(float elapsed_s) {
   CartesianReference point{};
-  // 轨迹没在跑就直接返回零参考，调用方不应使用这个返回值
   if (!running_) {
     return point;
   }
-  // x、y 两个方向各自做一次“两端静止”的五次多项式插值
-  // 直线 = 两个坐标轴各自独立地平滑移动，合成出来就是直线段
   float vel_x = 0.f, vel_y = 0.f, acc_x = 0.f, acc_y = 0.f;
-  interpolate(start_.x, end_.x, elapsed_s, duration_s_, point.x, vel_x, acc_x);
-  interpolate(start_.y, end_.y, elapsed_s, duration_s_, point.y, vel_y, acc_y);
+  interpolateV(start_.x, end_.x, v0x_, elapsed_s, duration_s_, point.x, vel_x, acc_x);
+  interpolateV(start_.y, end_.y, v0y_, elapsed_s, duration_s_, point.y, vel_y, acc_y);
   point.dx = vel_x;
   point.dy = vel_y;
   point.ddx = acc_x;
   point.ddy = acc_y;
-  // 时间走完：把轨迹标记为结束，返回值恰好是终点
-  // Arm::trajectoryPlanner() 会检测 running() 变 false，从而置 trajFinished()
   if (elapsed_s >= duration_s_) {
     running_ = false;
   }
   return point;
 }
 
-// 两端静止的单轴五次插值（位置或关节角通用）
-// 归一化五次多项式 s(τ) = 10τ³ − 15τ⁴ + 6τ⁵ 满足：
-//   s(0)=0, s(1)=1，且 s'(0)=s'(1)=0、s''(0)=s''(1)=0
-// 也就是起点和终点的位置、速度、加速度全部对得上，衔接处不会“顿挫”
 void ArmTrajectory::interpolate(float start, float end, float elapsed_s,
                                 float duration_s, float& position,
                                 float& velocity, float& acceleration) {
@@ -63,14 +56,11 @@ void ArmTrajectory::interpolate(float start, float end, float elapsed_s,
   velocity = 0.f;
   acceleration = 0.f;
   if (duration_s <= 0.f) {
-    // 时长非法时直接跳到终点（防御性写法，start() 已保证时长为正）
     position = end;
     return;
   }
   float tau = timeRatio(elapsed_s, duration_s);
-  // 位移缩放系数：全程长度 (end - start)，多项式只负责“形状”
   float span = end - start;
-  // 链式法则：对时间求导 = 对 τ 求导 × dτ/dt = 对 τ 求导 / duration
   float tau2 = tau * tau;
   float tau3 = tau2 * tau;
   float tau4 = tau2 * tau2;
@@ -81,5 +71,31 @@ void ArmTrajectory::interpolate(float start, float end, float elapsed_s,
       span * (60.f * tau - 180.f * tau2 + 120.f * tau3) / (duration_s * duration_s);
 }
 
-// 中途取消：不再推进，调用方（Arm）会保持最后一次位置参考
 void ArmTrajectory::abort() { running_ = false; }
+
+void ArmTrajectory::interpolateV(float start, float end, float v0,
+                                 float elapsed_s, float duration_s,
+                                 float& position, float& velocity,
+                                 float& acceleration) {
+  position = start;
+  velocity = 0.f;
+  acceleration = 0.f;
+  if (duration_s <= 0.f) {
+    position = end;
+    return;
+  }
+  const float tau = timeRatio(elapsed_s, duration_s);
+  const float span = end - start;
+  const float A = (fabsf(span) < 1e-9f) ? 0.f : v0 * duration_s / span;
+  const float a1 = A;
+  const float a3 = 10.f - 6.f * A;
+  const float a4 = 8.f * A - 15.f;
+  const float a5 = 6.f - 3.f * A;
+  const float t2 = tau * tau, t3 = t2 * tau, t4 = t3 * tau, t5 = t4 * tau;
+  const float u = a1 * tau + a3 * t3 + a4 * t4 + a5 * t5;
+  const float du = a1 + 3.f * a3 * t2 + 4.f * a4 * t3 + 5.f * a5 * t4;
+  const float ddu = 6.f * a3 * tau + 12.f * a4 * t2 + 20.f * a5 * t3;
+  position = start + span * u;
+  velocity = span * du / duration_s;
+  acceleration = span * ddu / (duration_s * duration_s);
+}

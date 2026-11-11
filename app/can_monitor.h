@@ -11,9 +11,7 @@
 #ifndef CAN_MONITOR_H
 #define CAN_MONITOR_H
 
-// CAN filter初始化
 void canFilterInit(void);
-// CAN通信发送管理
 void canTxMonitor(void);
 
-#endif  // CAN_MONITOR_H
+#endif

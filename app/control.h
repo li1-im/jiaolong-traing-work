@@ -16,4 +16,4 @@ void controlInit(void);
 // 控制主循环
 void controlLoop(void);
 
-#endif  // CONTROL_H
+#endif
